@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+
+<title>Simulador de Baldosas</title>
+
+<style>
+
+*{
+    box-sizing:border-box;
+    margin:0;
+    padding:0;
+    font-family:Arial, Helvetica, sans-serif;
+}
+
+body{
+    background:#1e1e1e;
+    color:white;
+    display:flex;
+    height:100vh;
+    overflow:hidden;
+}
+
+/* PANEL IZQUIERDO */
+
+.sidebar{
+    width:360px;
+    background:#2b2b2b;
+    padding:20px;
+    overflow:auto;
+    border-right:2px solid #444;
+}
+
+.sidebar h1{
+    font-size:24px;
+    margin-bottom:20px;
+}
+
+.section{
+    margin-bottom:25px;
+}
+
+.section h2{
+    font-size:16px;
+    margin-bottom:10px;
+    color:#ddd;
+}
+
+label{
+    display:block;
+    margin-bottom:8px;
+}
+
+input{
+    width:100%;
+    padding:10px;
+    margin-bottom:10px;
+    border:none;
+    border-radius:6px;
+    font-size:16px;
+}
+
+button{
+    width:100%;
+    padding:12px;
+    margin-bottom:10px;
+    border:none;
+    border-radius:6px;
+    background:#4a90e2;
+    color:white;
+    font-size:15px;
+    cursor:pointer;
+    transition:0.2s;
+}
+
+button:hover{
+    background:#3578c9;
+}
+
+/* PALETA */
+
+.color-palette{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:12px;
+}
+
+.color-item{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+}
+
+.color-btn{
+    width:100%;
+    height:50px;
+    border-radius:8px;
+    border:3px solid transparent;
+    cursor:pointer;
+}
+
+.color-btn.active{
+    border:3px solid white;
+}
+
+.color-label{
+    margin-top:6px;
+    font-size:13px;
+    text-align:center;
+}
+
+/* INFO */
+
+.info{
+    background:#3a3a3a;
+    padding:12px;
+    border-radius:8px;
+    line-height:1.8;
+    font-size:15px;
+}
+
+.info-row{
+    display:flex;
+    align-items:center;
+    margin-bottom:14px;
+}
+
+.info-color{
+    width:20px;
+    height:20px;
+    margin-right:10px;
+    border:1px solid #999;
+}
+
+.info-text{
+    display:flex;
+    flex-direction:column;
+    font-size:14px;
+}
+
+/* ÁREA DERECHA */
+
+.main{
+    flex:1;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    overflow:auto;
+    background:#181818;
+    padding:20px;
+}
+
+canvas{
+    background:#181818;
+    box-shadow:0 0 15px rgba(0,0,0,0.5);
+    cursor:crosshair;
+    border-radius:10px;
+}
+
+</style>
+</head>
+<body>
+
+
+<!-- PANEL IZQUIERDO -->
+
+<div class="sidebar">
+
+    <h1>== Simulador de Piso ==</h1>
+    Para Escala 1/64 y Escala 1/43<br><br>
+    
+    <!-- DIMENSIONES -->
+
+    <div class="section">
+
+        <h2>Dimensiones</h2>
+
+        <label>Ancho (cm)</label>
+        <input type="number" id="widthInput" value="16">
+
+        <label>Largo (cm)</label>
+        <input type="number" id="heightInput" value="40">
+
+        <button onclick="generateGrid()">
+            GENERAR GRILLA
+        </button>
+
+    </div>
+
+    <!-- PATRONES -->
+
+    <div class="section">
+
+        <h2>Patrones Definidos</h2>
+
+        <button onclick="applyCheckerboard()">
+            Bandera a Cuadros
+        </button>
+
+        <button onclick="applyBorder()">
+            Bordes
+        </button>
+
+        <button onclick="fillSingleColor()">
+            Color sólido
+        </button>
+
+        <button onclick="undoLastMove()">
+            DESHACER ÚLTIMO MOVIMIENTO
+        </button>
+
+    </div>
+
+    <!-- COLORES -->
+
+    <div class="section">
+
+        <h2>Colores Disponibles</h2>
+
+        <div class="color-palette" id="palette"></div>
+
+    </div>
+
+    <!-- INFO -->
+
+    <div class="section">
+
+        <h2>Información del Armado</h2>
+
+        <div class="info" id="infoBox">
+            Esperando generación...
+        </div>
+
+    </div>
+
+</div>
+
+<!-- ÁREA PRINCIPAL -->
+
+<div class="main">
+
+    <canvas id="gridCanvas"></canvas>
+
+</div>
+
+<script>
+
+/////////////////////////////////////////////////////////
+// CONFIGURACIÓN
+/////////////////////////////////////////////////////////
+
+const TILE_SIZE = 30;
+
+/////////////////////////////////
+// CANTIDAD DE BALDOSAS POR PACK
+/////////////////////////////////
+const PACK_SIZE = 20;
+
+const canvas = document.getElementById("gridCanvas");
+
+const ctx = canvas.getContext("2d");
+
+let grid = [];
+
+let rows = 0;
+let cols = 0;
+
+let currentColor = "#222222";
+
+let mouseDown = false;
+
+// HISTORIAL
+
+let historyStack = [];
+
+/////////////////////////////////////////////////////////
+// COLORES
+/////////////////////////////////////////////////////////
+
+const COLORS = [
+
+    {
+        name:"Negro",
+        hex:"#222222"
+    },
+
+    {
+        name:"Gris",
+        hex:"#9e9e9e"
+    },
+
+    {
+        name:"Blanco",
+        hex:"#ffffff"
+    },
+
+    {
+        name:"Amarillo",
+        hex:"#ffd500"
+    },
+
+    {
+        name:"Rojo",
+        hex:"#d90429"
+    },
+
+    {
+        name:"Naranja",
+        hex:"#ff7b00"
+    },
+
+    {
+        name:"Celeste",
+        hex:"#4cc9f0"
+    },
+
+    {
+        name:"Azul",
+        hex:"#1d4ed8"
+    },
+
+    {
+        name:"Verde Manzana",
+        hex:"#84cc16"
+    }
+
+];
+
+/////////////////////////////////////////////////////////
+// CREAR PALETA
+/////////////////////////////////////////////////////////
+
+const palette = document.getElementById("palette");
+
+COLORS.forEach((color, index) => {
+
+    const item = document.createElement("div");
+
+    item.classList.add("color-item");
+
+    const div = document.createElement("div");
+
+    div.classList.add("color-btn");
+
+    if(index === 0){
+
+        div.classList.add("active");
+
+    }
+
+    div.style.background = color.hex;
+
+    div.dataset.color = color.hex;
+
+    div.onclick = () => {
+
+        document.querySelectorAll(".color-btn")
+        .forEach(btn => btn.classList.remove("active"));
+
+        div.classList.add("active");
+
+        currentColor = color.hex;
+
+    };
+
+    const label = document.createElement("div");
+
+    label.classList.add("color-label");
+
+    label.innerText = color.name;
+
+    item.appendChild(div);
+
+    item.appendChild(label);
+
+    palette.appendChild(item);
+
+});
+
+/////////////////////////////////////////////////////////
+// GUARDAR ESTADO
+/////////////////////////////////////////////////////////
+
+function saveState(){
+
+    const copy = JSON.parse(JSON.stringify(grid));
+
+    historyStack.push(copy);
+
+    // LIMITAR HISTORIAL
+    if(historyStack.length > 50){
+
+        historyStack.shift();
+
+    }
+
+}
+
+/////////////////////////////////////////////////////////
+// DESHACER
+/////////////////////////////////////////////////////////
+
+function undoLastMove(){
+
+    if(historyStack.length > 0){
+
+        grid = historyStack.pop();
+
+        drawGrid();
+
+        updateInfo();
+
+    }
+
+}
+
+/////////////////////////////////////////////////////////
+// AJUSTE AUTOMÁTICO
+/////////////////////////////////////////////////////////
+
+function adjustMeasure(value){
+
+    return Math.ceil(value / 2) * 2;
+
+}
+
+/////////////////////////////////////////////////////////
+// GENERAR GRILLA
+/////////////////////////////////////////////////////////
+
+function generateGrid(){
+
+    let widthCm = parseInt(
+        document.getElementById("widthInput").value
+    );
+
+    let heightCm = parseInt(
+        document.getElementById("heightInput").value
+    );
+
+    widthCm = adjustMeasure(widthCm);
+
+    heightCm = adjustMeasure(heightCm);
+
+    document.getElementById("widthInput").value = widthCm;
+
+    document.getElementById("heightInput").value = heightCm;
+    
+/////////////////////////////////////////////////
+// MEDIDA DE LA BALDOSA EXPRESADA EN CM
+/////////////////////////////////////////////////
+
+    cols = widthCm / 1;
+
+    rows = heightCm / 1;
+
+    grid = [];
+
+    historyStack = [];
+
+    for(let y = 0; y < rows; y++){
+
+        let row = [];
+
+        for(let x = 0; x < cols; x++){
+
+            row.push("#9e9e9e");
+
+        }
+
+        grid.push(row);
+
+    }
+
+    resizeCanvas();
+
+    drawGrid();
+
+    updateInfo();
+
+}
+
+/////////////////////////////////////////////////////////
+// REDIMENSIONAR CANVAS
+/////////////////////////////////////////////////////////
+
+function resizeCanvas(){
+
+    canvas.width = cols * TILE_SIZE;
+
+    canvas.height = rows * TILE_SIZE;
+
+}
+
+/////////////////////////////////////////////////////////
+// DIBUJAR GRILLA
+/////////////////////////////////////////////////////////
+
+function drawGrid(){
+
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    for(let y = 0; y < rows; y++){
+
+        for(let x = 0; x < cols; x++){
+
+            ctx.fillStyle = grid[y][x];
+
+            ctx.fillRect(
+                x * TILE_SIZE,
+                y * TILE_SIZE,
+                TILE_SIZE,
+                TILE_SIZE
+            );
+
+            ctx.strokeStyle = "#444";
+
+            ctx.lineWidth = 1;
+
+            ctx.strokeRect(
+                x * TILE_SIZE,
+                y * TILE_SIZE,
+                TILE_SIZE,
+                TILE_SIZE
+            );
+
+        }
+
+    }
+
+}
+
+/////////////////////////////////////////////////////////
+// PINTAR TILE
+/////////////////////////////////////////////////////////
+
+function paintTile(e){
+
+    const rect = canvas.getBoundingClientRect();
+
+    const mouseX = e.clientX - rect.left;
+
+    const mouseY = e.clientY - rect.top;
+
+    const x = Math.floor(mouseX / TILE_SIZE);
+
+    const y = Math.floor(mouseY / TILE_SIZE);
+
+    if(
+        x >= 0 &&
+        x < cols &&
+        y >= 0 &&
+        y < rows
+    ){
+
+        // GUARDAR ESTADO SOLO AL INICIO
+        if(!mouseDownSaved){
+
+            saveState();
+
+            mouseDownSaved = true;
+
+        }
+
+        grid[y][x] = currentColor;
+
+        drawGrid();
+
+        updateInfo();
+
+    }
+
+}
+
+/////////////////////////////////////////////////////////
+// EVENTOS MOUSE
+/////////////////////////////////////////////////////////
+
+let mouseDownSaved = false;
+
+canvas.addEventListener("mousedown", (e) => {
+
+    mouseDown = true;
+
+    mouseDownSaved = false;
+
+    paintTile(e);
+
+});
+
+canvas.addEventListener("mousemove", (e) => {
+
+    if(mouseDown){
+
+        paintTile(e);
+
+    }
+
+});
+
+window.addEventListener("mouseup", () => {
+
+    mouseDown = false;
+
+});
+
+/////////////////////////////////////////////////////////
+// INFORMACIÓN
+/////////////////////////////////////////////////////////
+
+function updateInfo(){
+
+    let counts = {};
+
+    let total = rows * cols;
+
+    // CONTAR BALDOSAS
+
+    for(let y = 0; y < rows; y++){
+
+        for(let x = 0; x < cols; x++){
+
+            const color = grid[y][x];
+
+            counts[color] = (counts[color] || 0) + 1;
+
+        }
+
+    }
+
+    let html = "";
+
+    // INFORMACIÓN GENERAL
+
+    html += `
+        <strong>Grilla:</strong>
+        ${cols} Baldosas x ${rows} Baldosas<br>
+    `;
+
+    html += `
+        <strong>Total:</strong>
+        ${total} baldosas
+        <br><br>
+    `;
+
+    // COLORES UTILIZADOS
+
+    html += `
+        <strong>Colores Utilizados</strong>
+        <br>
+    `;
+
+    COLORS.forEach(colorObj => {
+
+        const count = counts[colorObj.hex] || 0;
+
+        // MOSTRAR SOLO SI EXISTE
+
+        if(count > 0){
+
+            html += `
+
+                <div class="info-row">
+
+                    <div class="info-color"
+                         style="background:${colorObj.hex}">
+                    </div>
+
+                    <div class="info-text">
+
+                        <strong>${colorObj.name}</strong>
+
+                        <span>
+                            ${count} baldosas
+                        </span>
+
+                    </div>
+
+                </div>
+
+            `;
+
+        }
+
+    });
+
+    // PACKS
+
+    html += `
+        <br>
+        <strong>Packs Necesarios Para el Armado</strong>
+        <br>
+    `;
+
+    COLORS.forEach(colorObj => {
+
+        const count = counts[colorObj.hex] || 0;
+
+        if(count > 0){
+
+            const packs = Math.ceil(count / PACK_SIZE);
+
+            html += `
+
+                <div class="info-row">
+
+                    <div class="info-color"
+                         style="background:${colorObj.hex}">
+                    </div>
+
+                    <div class="info-text">
+
+                        <strong>${colorObj.name}</strong>
+
+                        <span>
+                            ${packs} packs de ${PACK_SIZE}
+                        </span>
+
+                    </div>
+
+                </div>
+
+            `;
+
+        }
+
+    });
+
+    document.getElementById("infoBox").innerHTML = html;
+
+}
+/////////////////////////////////////////////////////////
+// PATRÓN DAMERO
+/////////////////////////////////////////////////////////
+
+function applyCheckerboard(){
+
+    saveState();
+
+    for(let y = 0; y < rows; y++){
+
+        for(let x = 0; x < cols; x++){
+
+            if((x + y) % 2 === 0){
+
+                grid[y][x] = "#222222";
+
+            }else{
+
+                grid[y][x] = "#ffffff";
+
+            }
+
+        }
+
+    }
+
+    drawGrid();
+
+    updateInfo();
+
+}
+
+/////////////////////////////////////////////////////////
+// PATRÓN BORDES
+/////////////////////////////////////////////////////////
+
+function applyBorder(){
+
+    saveState();
+
+    for(let y = 0; y < rows; y++){
+
+        for(let x = 0; x < cols; x++){
+
+            if(
+                x === 0 ||
+                y === 0 ||
+                x === cols - 1 ||
+                y === rows - 1
+            ){
+
+                grid[y][x] = "#ff7b00";
+
+            }else{
+
+                grid[y][x] = "#9e9e9e";
+
+            }
+
+        }
+
+    }
+
+    drawGrid();
+
+    updateInfo();
+
+}
+
+/////////////////////////////////////////////////////////
+// COLOR SÓLIDO
+/////////////////////////////////////////////////////////
+
+function fillSingleColor(){
+
+    saveState();
+
+    for(let y = 0; y < rows; y++){
+
+        for(let x = 0; x < cols; x++){
+
+            grid[y][x] = currentColor;
+
+        }
+
+    }
+
+    drawGrid();
+
+    updateInfo();
+
+}
+
+/////////////////////////////////////////////////////////
+// INICIO
+/////////////////////////////////////////////////////////
+
+generateGrid();
+
+</script>
+
+</body>
+</html>
